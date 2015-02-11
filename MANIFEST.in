@@ -1,0 +1,3 @@
+graft src/becas_wrapper/sphinx_build/html
+recursive-include src/becas_wrapper/test *.py
+
