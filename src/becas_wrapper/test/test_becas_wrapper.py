@@ -3,11 +3,9 @@ import unittest
 import numpy as np
 
 from fusedwind.turbine.structure_vt import CrossSectionStructureVT, MaterialProps
-from becas_wrapper.airfoil2becas_prep import CS2DtoBECAS
+from becas_wrapper.cs2dtobecas import CS2DtoBECAS
 
 def make_cs2d():
-
-    # configure_shellexpander('/Users/frza/svn/BECAS/shellexpander/src')
 
     cs2d = CrossSectionStructureVT()
     cs2d.airfoil.initialize(np.loadtxt('ffaw3301.dat'))
@@ -208,9 +206,9 @@ def make_cs2d():
     b = CS2DtoBECAS()
     b.cs2d = cs2d
     b.total_points = 150
-    b.open_te = True
     # dominant regions: spar caps
     b.dominant_elsets = ['REGION03', 'REGION05']
+    b.path_shellexpander = '/Users/frza/svn/BECAS/shellexpander/src'
     b.run()
     return b
 
