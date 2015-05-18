@@ -63,7 +63,8 @@ class CS2DtoBECAS(Component):
         try:
             self.compute_max_layers()
             self.compute_airfoil()
-            self.flatback()
+            # self.flatback()
+            self.adjust_te_panels()
 
             self.add_shearweb_nodes()
             self.create_elements()
@@ -108,7 +109,7 @@ class CS2DtoBECAS(Component):
 
         af = self.cs2d.airfoil
 
-        if np.linalg.norm(self.cs2d.airfoil.points[0] - self.cs2d.airfoil.points[-1]) > 1.e-4:
+        if np.linalg.norm(self.cs2d.airfoil.points[0] - self.cs2d.airfoil.points[-1]) > 0.:
             self.open_te = True
 
         # construct distfunc for airfoil curve
@@ -151,6 +152,8 @@ class CS2DtoBECAS(Component):
         # and now the webs, if any
         for name in self.cs2d.webs:
             w = getattr(self.cs2d, name)
+            if w.thickness == 0.: continue
+
             WCPs_s.append(w.s0)
             WCPs_s.append(w.s1)
             # save the coordinates of the WCPs that served as inputs
@@ -196,17 +199,17 @@ class CS2DtoBECAS(Component):
             # find the amount of points required for this region
             # and the dist_ni refers to the total number of nodes on the
             # curve when at the end of the region (s1)
-            dist_ni += max(0, int(round( (s_end_ - s_start_)/ds_const )) - 1)
+            dist_ni += max(1, int(round( (s_end_ - s_start_)/ds_const )))
             # add a distribution point to the Curve
-            dist.append([s_end_, ds_const, dist_ni+1])
+            dist.append([s_end_, ds_const, dist_ni])
 
             # save the index of the end point of the region
             # is it a region, or s0 or s1 of a web?
             if r.name.lower().startswith('web'):
                 if s_end == r.s0:
-                    r.s0_i = dist_ni
+                    r.s0_i = dist_ni-1
                 elif s_end == r.s1:
-                    r.s1_i = dist_ni
+                    r.s1_i = dist_ni-1
             else:
                 # some CPs might coincide with WCPs, in that case it would
                 # not have been in allCPs
@@ -215,25 +218,25 @@ class CS2DtoBECAS(Component):
                     for w_name in self.cs2d.webs:
                         w = getattr(self.cs2d, w_name)
                         if s_end == w.s0:
-                            w.s0_i = dist_ni
+                            w.s0_i = dist_ni-1
                         elif s_end == w.s1:
-                            w.s1_i = dist_ni
+                            w.s1_i = dist_ni-1
                 # but also still add s1_i to the region object
-                r.s1_i = dist_ni
+                r.s1_i = dist_ni-1
             # and save the index for later reference in a convienent list
             if r.s1 in CPs_s:
-                self.iCPs.append(dist_ni)
+                self.iCPs.append(dist_ni-1)
             # be adviced, a CP can also live on the web
             if r.s1 in WCPs_s:
-                self.iWCPs.append(dist_ni)
+                self.iWCPs.append(dist_ni-1)
 
         # before executing, make sure all the points are in increasing order
         if np.diff(np.array(dist)[:, 0]).min() <= 0:
             raise ValueError, 'Points are not continiously increasing'
-        dist_ni += 1
         afn = af.redistribute(dist_ni, dist=dist)
         # get the redistributed points
         self.airfoil = afn.points
+        self.total_points = self.airfoil.shape[0]
         self.CPs_s = CPs_s
         self.WCPs_s = WCPs_s
 
@@ -266,9 +269,12 @@ class CS2DtoBECAS(Component):
         the airfoil nodes.
         """
 
-        self.nr_webs = len(self.cs2d.webs)
+        self.nr_webs = 0
+        self.web_coord = np.array([])
         for w_name in self.cs2d.webs:
             w = getattr(self.cs2d, w_name)
+            if w.thickness == 0.: continue
+            self.nr_webs += 1
             # at this point there are no nodes on the shear web itself
             # add a node distribution on the shear web too, and base the node
             # spacing on the average spacing ds on the airfoil
@@ -300,6 +306,48 @@ class CS2DtoBECAS(Component):
                 self.web_coord = np.append(self.web_coord, tmp, axis=0)
             except:
                 self.web_coord = tmp.copy()
+
+    def adjust_te_panels(self):
+        """
+        adjust the thickness of the trailing edge panels according
+        to the thickness of the trailing edge
+
+        """
+
+        if not self.open_te: return
+
+        # pressure and suction side panels
+        dTE = np.abs(self.airfoil[-1, 1] - self.airfoil[0, 1]) / 2.5
+        r_name = self.cs2d.regions[-1]
+        r_TE_suc = getattr(self.cs2d, r_name)
+        r_name = self.cs2d.regions[0]
+        r_TE_pres = getattr(self.cs2d, r_name)
+        thick_max = (r_TE_pres.thickness + r_TE_suc.thickness) / 2.
+        ratio = thick_max / dTE
+        self._logger.info('TE panel ratio %f %f %f' % (self.cs2d.s, dTE * 2.5, ratio))
+        if ratio > 1.:
+            for lname in r_TE_suc.layers:
+                layer = getattr(r_TE_suc, lname)
+                layer.thickness = layer.thickness / ratio
+            for lname in r_TE_pres.layers:
+                layer = getattr(r_TE_pres, lname)
+                layer.thickness = layer.thickness / ratio
+            r_TE_suc.thickness /= ratio
+            r_TE_pres.thickness /= ratio
+
+        # trailing edge "web"
+        for name in self.cs2d.webs:
+            TEw = getattr(self.cs2d, name)
+            if TEw.s0 in [-1., 1.]:
+                dTE = dTE * 2.5
+                ratio = TEw.thickness / dTE
+                self._logger.info('TE web ratio %f %f %f' % (self.cs2d.s, dTE, TEw.thickness))
+                if ratio > 1.:
+                    for lname in TEw.layers:
+                        layer = getattr(TEw, lname)
+                        layer.thickness = layer.thickness / ratio            
+                    TEw.thickness /= ratio
+                break
 
     def flatback(self):
         """
@@ -491,6 +539,9 @@ class CS2DtoBECAS(Component):
             iw_start = nr_air_el + el_offset
 
             w = getattr(self.cs2d, w_name)
+
+            if w.thickness == 0.:continue
+
             # number of intermediate shear web elements (those that are not
             # connected to the airfoil)
             nr_el = w.w1_i - w.w0_i
