@@ -54,7 +54,7 @@ class ComputeHAWC2BeamProps(Component):
 
             setattr(self.beam_structure, name, var)
 
-        self.beam_structure.s = self.pf.s * self.pf.blade_length
+        self.beam_structure.s = self.pf.s * self.pf.smax * self.pf.blade_length
         self.mass = np.trapz(self.beam_structure.dm, self.beam_structure.s)
         self.mass_moment = np.trapz(self.g * self.beam_structure.dm * (self.beam_structure.s + self.hub_radius), 
                                                                       self.beam_structure.s)
