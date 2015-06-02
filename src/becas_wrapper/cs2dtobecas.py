@@ -317,14 +317,14 @@ class CS2DtoBECAS(Component):
         if not self.open_te: return
 
         # pressure and suction side panels
-        dTE = np.abs(self.airfoil[-1, 1] - self.airfoil[0, 1]) / 2.5
+        dTE = np.abs(self.airfoil[-1, 1] - self.airfoil[0, 1]) / 3.
         r_name = self.cs2d.regions[-1]
         r_TE_suc = getattr(self.cs2d, r_name)
         r_name = self.cs2d.regions[0]
         r_TE_pres = getattr(self.cs2d, r_name)
         thick_max = (r_TE_pres.thickness + r_TE_suc.thickness) / 2.
         ratio = thick_max / dTE
-        self._logger.info('TE panel ratio %f %f %f' % (self.cs2d.s, dTE * 2.5, ratio))
+        self._logger.info('TE panel ratio %f %f %f' % (self.cs2d.s, dTE * 3., ratio))
         if ratio > 1.:
             for lname in r_TE_suc.layers:
                 layer = getattr(r_TE_suc, lname)
@@ -339,14 +339,12 @@ class CS2DtoBECAS(Component):
         for name in self.cs2d.webs:
             TEw = getattr(self.cs2d, name)
             if TEw.s0 in [-1., 1.]:
-                dTE = dTE * 2.5
-                ratio = TEw.thickness / dTE
-                self._logger.info('TE web ratio %f %f %f' % (self.cs2d.s, dTE, TEw.thickness))
-                if ratio > 1.:
-                    for lname in TEw.layers:
-                        layer = getattr(TEw, lname)
-                        layer.thickness = layer.thickness / ratio            
-                    TEw.thickness /= ratio
+                dTE = dTE * 2.
+                ratio = r_TE_suc.thickness / TEw.thickness
+                for lname in TEw.layers:
+                    layer = getattr(TEw, lname)
+                    layer.thickness = layer.thickness * ratio
+                TEw.thickness *= ratio
                 break
 
     def flatback(self):
@@ -531,6 +529,8 @@ class CS2DtoBECAS(Component):
             print '    nr web nodes: %4i' % len(self.web_coord)
 
         web_el = []
+        pre_side, suc_side = [], []
+
         # keep track of elements that have been added on the shear webs
         el_offset = 0
         # define el for each shear web, and create corresponding node groups
@@ -539,7 +539,7 @@ class CS2DtoBECAS(Component):
             iw_start = nr_air_el + el_offset
 
             w = getattr(self.cs2d, w_name)
-
+            w.is_TE = False
             if w.thickness == 0.:continue
 
             # number of intermediate shear web elements (those that are not
@@ -570,15 +570,21 @@ class CS2DtoBECAS(Component):
 
             # and now we can populate the different regions with their
             # corresponding elements
-            self.elset_defs[w_name] = np.arange(w.e0_i, w.e1_i+1, dtype=np.int)
-            web_el.extend(range(w.e0_i, w.e1_i+1))
+            if w.s0 in [-1., 1.]:
+                w.is_TE = True
+                self.elset_defs[w_name] = np.array([w.e0_i, w.e1_i] + [0], dtype=int)
+                suc_side.extend([w.e0_i, w.e1_i+1] + [1])
+                self._logger.info('TE web identified! %s %i %i' % (w_name, w.s0_i, w.s1_i))
+            else:
+                self.elset_defs[w_name] = np.arange(w.e0_i, w.e1_i+1, dtype=np.int)
+                web_el.extend(range(w.e0_i, w.e1_i+1))
 
             # add the number of elements added for this web
             el_offset += nr_el+2
 
-        self.elset_defs['WEBS'] = np.array(web_el, dtype=np.int)
+        if len(web_el) > 0:
+            self.elset_defs['WEBS'] = np.array(web_el, dtype=np.int)
 
-        pre_side, suc_side = [], []
         # element groups for the regions
         for r_name in self.cs2d.regions:
             r = getattr(self.cs2d, r_name)
@@ -591,14 +597,9 @@ class CS2DtoBECAS(Component):
             else:
                 suc_side.extend([r.s0_i, r.s1_i])
 
-        tmp = np.array(pre_side)
+        tmp = np.array(list(pre_side)+list(suc_side))
         pre0, pre1 = tmp.min(), tmp.max()
         self.elset_defs['SURFACE'] = np.arange(pre0, pre1, dtype=np.int)
-
-        tmp = np.array(suc_side)
-        suc0, suc1 = tmp.min(), tmp.max()
-        self.elset_defs['SURFACE'] = np.append(self.elset_defs['SURFACE'],
-                                                np.arange(suc0, suc1, dtype=np.int))
 
         # the last region and the suction side do not include the last element
         # for flatback airfoils. Fix this here.
