@@ -139,7 +139,8 @@ class BECASWrapper(Component):
     plot_paraview = Bool(False, iotype='in', desc='Export plot files for ParaView')
     spanpos = Float(iotype='in')
 
-    hawc2_cross = Array(np.zeros(19), iotype='out', desc='HAWC2 cross section')
+    hawc2_FPM = Bool(False, iotype='in',desc='Fully Populated Stiffness Matrix for Hawc2 beam')
+    hawc2_cross = Array(iotype='out', desc='HAWC2 cross section')
     hawc2_crossVT = Instance(CrossSectionStructureDataVT(), iotype='out', desc='HAWC2 cross section')
     stress = List(iotype='out')
     strain = List(iotype='out')
@@ -166,7 +167,10 @@ class BECASWrapper(Component):
             elif self.exec_mode in ['matlab', 'octave']:
                 self.execute_shell()
         except:
-            h2c = np.zeros(19)
+            if self.hawc2_FPM:
+                h2c = np.zeros(30)
+            else:
+                h2c = np.zeros(19)
             h2c[1] = 1.e6
             self.write_output_vars(h2c)
             self.max_failure.cases = np.zeros(len(self.load_cases.cases))
@@ -245,7 +249,7 @@ class BECASWrapper(Component):
         out_str.append('[csprops] = BECAS_CrossSectionProps(constitutive.Ks,utils);\n')
         out_str.append('RadialPosition=%19.12g; \n' % self.spanpos)
         out_str.append("OutputFilename='%s'; \n" % 'BECAS2HAWC2.out')
-        out_str.append('BECAS_Becas2Hawc2(OutputFilename,RadialPosition,constitutive,csprops,utils)\n')
+        out_str.append('BECAS_Becas2Hawc2(OutputFilename,RadialPosition,constitutive,csprops,utils,%s)\n' % str(self.hawc2_FPM).lower())
         out_str.append("save('%s', 'utils', 'solutions', 'csprops')\n" % self.utils_rst_filename)
         if self.plot_paraview and '-fd' not in self.itername:
             path = os.path.join(self.basedir, self.path_plots)
@@ -320,26 +324,57 @@ class BECASWrapper(Component):
         fid.close()
 
     def write_output_vars(self, h2c):
-
-        self.hawc2_crossVT.s = self.spanpos
-        self.hawc2_crossVT.dm = h2c[1]
-        self.hawc2_crossVT.x_cg = h2c[2]
-        self.hawc2_crossVT.y_cg = h2c[3]
-        self.hawc2_crossVT.ri_x = h2c[4]
-        self.hawc2_crossVT.ri_y = h2c[5]
-        self.hawc2_crossVT.x_sh = h2c[6]
-        self.hawc2_crossVT.y_sh = h2c[7]
-        self.hawc2_crossVT.E = h2c[8]
-        self.hawc2_crossVT.G = h2c[9]
-        self.hawc2_crossVT.I_x = h2c[10]
-        self.hawc2_crossVT.I_y = h2c[11]
-        self.hawc2_crossVT.K = h2c[12]
-        self.hawc2_crossVT.k_x = h2c[13]
-        self.hawc2_crossVT.k_y = h2c[14]
-        self.hawc2_crossVT.A = h2c[15]
-        self.hawc2_crossVT.pitch = h2c[16]
-        self.hawc2_crossVT.x_e = h2c[17]
-        self.hawc2_crossVT.y_e = h2c[18]
+        if self.hawc2_FPM:
+            self.hawc2_crossVT.s = self.spanpos
+            self.hawc2_crossVT.dm = h2c[1]
+            self.hawc2_crossVT.x_cg = h2c[2]
+            self.hawc2_crossVT.y_cg = h2c[3]
+            self.hawc2_crossVT.ri_x = h2c[4]
+            self.hawc2_crossVT.ri_y = h2c[5]
+            self.hawc2_crossVT.pitch = h2c[6]
+            self.hawc2_crossVT.x_e = h2c[7]
+            self.hawc2_crossVT.y_e = h2c[8]
+            self.hawc2_crossVT.K_11 = h2c[9]
+            self.hawc2_crossVT.K_12 = h2c[10]
+            self.hawc2_crossVT.K_13 = h2c[11]
+            self.hawc2_crossVT.K_14 = h2c[12]
+            self.hawc2_crossVT.K_15 = h2c[13]
+            self.hawc2_crossVT.K_16 = h2c[14]
+            self.hawc2_crossVT.K_22 = h2c[15]
+            self.hawc2_crossVT.K_23 = h2c[16]
+            self.hawc2_crossVT.K_24 = h2c[17]
+            self.hawc2_crossVT.K_25 = h2c[18]
+            self.hawc2_crossVT.K_26 = h2c[19]
+            self.hawc2_crossVT.K_33 = h2c[20]
+            self.hawc2_crossVT.K_34 = h2c[21]
+            self.hawc2_crossVT.K_35 = h2c[22]
+            self.hawc2_crossVT.K_36 = h2c[23]
+            self.hawc2_crossVT.K_44 = h2c[24]
+            self.hawc2_crossVT.K_45 = h2c[25]
+            self.hawc2_crossVT.K_46 = h2c[26]
+            self.hawc2_crossVT.K_55 = h2c[27]
+            self.hawc2_crossVT.K_56 = h2c[28]
+            self.hawc2_crossVT.K_66 = h2c[29]
+        else:
+            self.hawc2_crossVT.s = self.spanpos
+            self.hawc2_crossVT.dm = h2c[1]
+            self.hawc2_crossVT.x_cg = h2c[2]
+            self.hawc2_crossVT.y_cg = h2c[3]
+            self.hawc2_crossVT.ri_x = h2c[4]
+            self.hawc2_crossVT.ri_y = h2c[5]
+            self.hawc2_crossVT.x_sh = h2c[6]
+            self.hawc2_crossVT.y_sh = h2c[7]
+            self.hawc2_crossVT.E = h2c[8]
+            self.hawc2_crossVT.G = h2c[9]
+            self.hawc2_crossVT.I_x = h2c[10]
+            self.hawc2_crossVT.I_y = h2c[11]
+            self.hawc2_crossVT.K = h2c[12]
+            self.hawc2_crossVT.k_x = h2c[13]
+            self.hawc2_crossVT.k_y = h2c[14]
+            self.hawc2_crossVT.A = h2c[15]
+            self.hawc2_crossVT.pitch = h2c[16]
+            self.hawc2_crossVT.x_e = h2c[17]
+            self.hawc2_crossVT.y_e = h2c[18]
 
     def execute_oct2py(self):
         """
@@ -427,7 +462,7 @@ class BECASWrapper(Component):
             # Output of results to HAWC2 st file
             t0 = time.time()
             oc("RadPos=1;") # Define radial position
-            inputs = 'false, RadPos, constitutive, csprops, utils'
+            inputs = 'false, RadPos, constitutive, csprops, utils,' + str(self.hawc2_FPM).lower()
             oc("[hawc2_cross] = BECAS_Becas2Hawc2(%s);" % inputs)
             # self._logger.info('BECAS_Becas2Hawc2: % 10.6f seconds' % (time.time() - t0))
             self.paraview_octave()
@@ -440,7 +475,10 @@ class BECASWrapper(Component):
             self.stress_recovery_octave()
             # self._logger.info('stress_recovery: % 10.6f seconds' % (time.time() - t0))
         except:
-            h2c = np.zeros(19)
+            if self.hawc2_FPM:
+                h2c = np.zeros(30)
+            else:
+                h2c = np.zeros(19)
             h2c[1] = 2.e3
             self.write_output_vars(h2c)
             self.paraview_octave(force=True)
