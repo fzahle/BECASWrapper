@@ -167,11 +167,18 @@ def becas_configure_stiffness_calc(kls):
     cls.connect('becas_inputs', 'a2b.becas_inputs')
     cls.connect('section_name', 'a2b.section_name')
 
+    # add BECAS mesh parameters
+    cls.create_passthrough('a2b.total_points')
+    cls.create_passthrough('a2b.max_layers')
+
     # add the CrossSectionStructureVT as parameter to the cid
     cls.cid.add_parameter('a2b.cs2d')
     # the parent assembly will connect to this with a list of cases
     # for each radial position
     cls.connect('cs2d', 'cid.case_inputs.a2b.cs2d')
+    # declare outputs
+    cls.cid.add_response('a2b.te_ratio')
+    cls.create_passthrough('cid.case_outputs.a2b.te_ratio')
 
     # add becas
     cls.add('becas', BECASWrapper())
