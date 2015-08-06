@@ -22,7 +22,8 @@ class CS2DtoBECAS(Component):
     path_shellexpander = Str(iotype='in', desc='Absolute path to shellexpander.py')
 
     cs2d = VarTree(CrossSectionStructureVT(), iotype='in', desc='Cross-sectional properties vartree')
-    total_points = Int(100, iotype='in')
+    total_points = Int(100, iotype='in', desc='Number of total geometry points to define the shape of the cross-section')
+    max_layers = Int(0, iotype='in', desc='Maximum number of layers through thickness')
     open_te = Bool(False, iotype='in', desc='If True, TE will be left open')
     becas_inputs = Str('becas_inputs', iotype='in',
                        desc='Relative path for the future BECAS input files')
@@ -40,6 +41,7 @@ class CS2DtoBECAS(Component):
     elements = Array(iotype='out', desc='')
     nodes_3d = Array(iotype='out', desc='')
     el_3d = Array(iotype='out', desc='')
+    te_ratio = Float(iotype='out', desc='ratio between outer TE planform and TE layup thickness')
 
     def execute(self):
         """  """
@@ -64,8 +66,8 @@ class CS2DtoBECAS(Component):
             self.compute_max_layers()
             self.compute_airfoil()
             # self.flatback()
-            self.adjust_te_panels()
-
+            # self.adjust_te_panels()
+            self.output_te_ratio()
             self.add_shearweb_nodes()
             self.create_elements()
             self.create_elements_3d(reverse_normals=False)
@@ -83,7 +85,6 @@ class CS2DtoBECAS(Component):
         material anywhere in the airfoil.
         """
 
-        self.max_layers = 0
         self.max_thickness = 0.
         for r_name in self.cs2d.regions:
             r = getattr(self.cs2d, r_name)
@@ -345,8 +346,6 @@ class CS2DtoBECAS(Component):
                     layer = getattr(TEw, lname)
                     layer.thickness = layer.thickness * ratio
                 TEw.thickness *= ratio
-                self._logger.info('TE web ratio %f %f %f' % (self.cs2d.s, TEw.thickness, ratio))
-
                 break
 
     def flatback(self):
@@ -379,6 +378,28 @@ class CS2DtoBECAS(Component):
             # along the flatback vector
             self.airfoil[-1, :] += dt_thick*flatback_vect_norm * 0.5
             self.airfoil[0, :] -= dt_thick*flatback_vect_norm * 0.5
+
+    def output_te_ratio(self):
+        """
+        outputs a ratio between the thickness of the trailing edge panels
+        and the thickness of the trailing edge
+
+        """
+
+        if not self.open_te: 
+            self.te_ratio = 0.
+            return
+
+        # pressure and suction side panels
+        dTE = np.abs(self.airfoil[-1, 1] - self.airfoil[0, 1]) / 3.
+        r_name = self.cs2d.regions[-1]
+        r_TE_suc = getattr(self.cs2d, r_name)
+        r_name = self.cs2d.regions[0]
+        r_TE_pres = getattr(self.cs2d, r_name)
+        thick_max = (r_TE_pres.thickness + r_TE_suc.thickness) / 2.
+        self.te_ratio = thick_max / dTE
+        self._logger.info('TE ratio %f %f %f' % (self.cs2d.s, dTE * 3., self.te_ratio))
+
 
     def _check_TE_thickness(self):
         """
@@ -533,13 +554,6 @@ class CS2DtoBECAS(Component):
         web_el = []
         pre_side, suc_side = [], []
 
-        # compute TE panel angle
-        v0 = np.array(self.CPs[1] - self.CPs[0])
-        v1 = np.array(self.CPs[-2] - self.CPs[-1])
-        self.TEangle = np.arccos(np.dot(v0,v1) / (np.linalg.norm(v0)*np.linalg.norm(v1)))*180./np.pi
-
-        self._logger.info('TE angle = %3.3f' % self.TEangle)
-
         # keep track of elements that have been added on the shear webs
         el_offset = 0
         # define el for each shear web, and create corresponding node groups
@@ -579,11 +593,11 @@ class CS2DtoBECAS(Component):
 
             # and now we can populate the different regions with their
             # corresponding elements
-            if w.s0 in [-1., 1.] and abs(self.TEangle) > 150.:
+            if w.s0 in [-1., 1.]:
                 w.is_TE = True
                 self.elset_defs[w_name] = np.array([w.e0_i, w.e1_i] + [0], dtype=int)
                 suc_side.extend([w.e0_i, w.e1_i+1] + [1])
-                self._logger.info('TE web identified! s=%3.3f %s %i %i' % (self.cs2d.s, w_name, w.s0_i, w.s1_i))
+                self._logger.info('TE web identified! %s %i %i' % (w_name, w.s0_i, w.s1_i))
             else:
                 self.elset_defs[w_name] = np.arange(w.e0_i, w.e1_i+1, dtype=np.int)
                 web_el.extend(range(w.e0_i, w.e1_i+1))
