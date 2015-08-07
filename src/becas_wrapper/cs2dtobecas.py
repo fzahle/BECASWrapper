@@ -272,6 +272,13 @@ class CS2DtoBECAS(Component):
 
         self.nr_webs = 0
         self.web_coord = np.array([])
+        # find the tickness in the TE region to close with a web the TE: first and last region
+        r_name = self.cs2d.regions[-1]
+        r_TE_suc = getattr(self.cs2d, r_name)
+        r_name = self.cs2d.regions[0]
+        r_TE_pres = getattr(self.cs2d, r_name)
+        # add a 50% thickness safety factor
+        TE_thick_max = (r_TE_pres.thickness + r_TE_suc.thickness)*1.5
         for w_name in self.cs2d.webs:
             w = getattr(self.cs2d, w_name)
             if w.thickness == 0.: continue
@@ -288,8 +295,14 @@ class CS2DtoBECAS(Component):
             len_web = np.linalg.norm( node1-node2 )
             nr_points = max(int(round(len_web / ds_mean, 0)), 3)
             # generate nodal coordinates on the shear web
-            x = np.linspace(node1[0], node2[0], nr_points)
-            y = np.linspace(node1[1], node2[1], nr_points)
+            if TE_thick_max > len_web and self.nr_webs == 1:
+                # if a web is used to close the TE and the the web is very 
+                # short, no extra nodes are placed along the web to avoid mesh issues
+                x = np.array([node1[0], node2[0]])
+                y = np.array([node1[1], node2[1]])
+            else:
+                x = np.linspace(node1[0], node2[0], nr_points)
+                y = np.linspace(node1[1], node2[1], nr_points)
             # and add them to the shear web node collection, but ignore the
             # first and last nodes because they are already included in
             # the airfoil coordinates.
@@ -554,6 +567,13 @@ class CS2DtoBECAS(Component):
         web_el = []
         pre_side, suc_side = [], []
 
+        # compute TE panel angle        
+        v0 = np.array(self.CPs[1] - self.CPs[0])       
+        v1 = np.array(self.CPs[-2] - self.CPs[-1])     
+        self.TEangle = np.arccos(np.dot(v0,v1) / (np.linalg.norm(v0)*np.linalg.norm(v1)))*180./np.pi       
+       
+        self._logger.info('TE angle = %3.3f' % self.TEangle)
+
         # keep track of elements that have been added on the shear webs
         el_offset = 0
         # define el for each shear web, and create corresponding node groups
@@ -593,11 +613,11 @@ class CS2DtoBECAS(Component):
 
             # and now we can populate the different regions with their
             # corresponding elements
-            if w.s0 in [-1., 1.]:
+            if w.s0 in [-1., 1.] and abs(self.TEangle) > 150.:
                 w.is_TE = True
                 self.elset_defs[w_name] = np.array([w.e0_i, w.e1_i] + [0], dtype=int)
                 suc_side.extend([w.e0_i, w.e1_i+1] + [1])
-                self._logger.info('TE web identified! %s %i %i' % (w_name, w.s0_i, w.s1_i))
+                self._logger.info('TE web identified! s=%3.3f %s %i %i' % (self.cs2d.s, w_name, w.s0_i, w.s1_i))
             else:
                 self.elset_defs[w_name] = np.arange(w.e0_i, w.e1_i+1, dtype=np.int)
                 web_el.extend(range(w.e0_i, w.e1_i+1))
