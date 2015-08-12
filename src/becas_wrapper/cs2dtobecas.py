@@ -404,7 +404,7 @@ class CS2DtoBECAS(Component):
             return
 
         # pressure and suction side panels
-        dTE = np.abs(self.airfoil[-1, 1] - self.airfoil[0, 1]) / 3.
+        dTE = np.abs(self.airfoil[-1, 1] - self.airfoil[0, 1]) / 2.
         r_name = self.cs2d.regions[-1]
         r_TE_suc = getattr(self.cs2d, r_name)
         r_name = self.cs2d.regions[0]
