@@ -136,6 +136,7 @@ class BECASWrapper(Component):
     emat  = Array(iotype='in', desc='Material per element %s' % defs)
 
     matprops = Array(iotype='in', desc='Material properties (see docs)')
+    checkmesh = Bool(False,iotype='in',desc='Activate BECAS check mesh')
     plot_paraview = Bool(False, iotype='in', desc='Export plot files for ParaView')
     spanpos = Float(iotype='in')
 
@@ -174,7 +175,7 @@ class BECASWrapper(Component):
             h2c[1] = 1.e6
             self.write_output_vars(h2c)
             self.max_failure.cases = np.zeros(len(self.load_cases.cases))
-            self._logger.info('BECAS crashed ...')
+            self._logger.info('BECAS crashed at R = %2.2f ...' % self.spanpos)
         # import ipdb
         # ipdb.set_trace()
         print ' BECAS calculation time: % 10.6f seconds' % (time.time() - tt)
@@ -246,6 +247,9 @@ class BECASWrapper(Component):
     def add_stiffness_calc(self, out_str):
 
         out_str.append('[constitutive.Ms] = BECAS_Constitutive_Ms(utils);\n')
+        # Check mesh quality
+        if self.checkmesh:
+            out_str.append('[ meshcheck ] = BECAS_CheckMesh( utils );\n')
         out_str.append('[csprops] = BECAS_CrossSectionProps(constitutive.Ks,utils);\n')
         out_str.append('RadialPosition=%19.12g; \n' % self.spanpos)
         out_str.append("OutputFilename='%s'; \n" % 'BECAS2HAWC2.out')
@@ -443,7 +447,8 @@ class BECASWrapper(Component):
                 oc("[utils] = BECAS_Utils(options, nl_2d, el_2d, emat, matprops);")
             # self._logger.info('BECAS_Utils: % 10.6f seconds' % (time.time() - t0))
             # Check mesh quality
-#            oc("[ meshcheck ] = BECAS_CheckMesh( utils );")
+            if self.checkmesh:
+                oc("[ meshcheck ] = BECAS_CheckMesh( utils );")
 
             # BECAS module for the evaluation of the cross section stiffness matrix
             t0 = time.time()
@@ -512,7 +517,8 @@ class BECASWrapper(Component):
         self.utils        = self.octave.get('utils')
         self.csprops      = self.octave.get('csprops')
         self.constitutive = self.octave.get('constitutive')
-#        self.meshcheck    = octave.get('meshcheck')
+        if self. checkmesh:
+            self.meshcheck    = octave.get('meshcheck')
 #        self.options      = octave.get('options')
 #        self.solutions    = octave.get('solutions')
 #        self.strain       = octave.get('strain')
